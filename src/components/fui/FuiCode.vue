@@ -12,8 +12,6 @@ const aceOptions = {
     showPrintMargin: false,
     showGutter: false,
     highlightActiveLine: true,
-    // enableBasicAutocompletion: true,
-    // enableLiveAutocompletion: true,
     tabSize: 4,
     useSoftTabs: true,
     wrap: true,
@@ -28,9 +26,24 @@ const { immidiateUpdates, selectionUpdates } = toRefs(session.state);
 const content = shallowRef('');
 const aceRef = shallowRef(null);
 const hovered = ref(false);
+const editorIsFocused = ref(false);
+let editingTimer: ReturnType<typeof setTimeout> | null = null;
+let isProgrammaticUpdate = false;
 
 onMounted(() => {
     watch(immidiateUpdates, onUpdate, { immediate: true });
+    if (!props.readonly) {
+        nextTick(() => {
+            const editor = aceRef.value?._editor;
+            if (!editor) return;
+            editor.on('change', onAceChange);
+            editor.on('focus', () => { editorIsFocused.value = true; });
+            editor.on('blur', () => {
+                editorIsFocused.value = false;
+                onUpdate();
+            });
+        });
+    }
 });
 
 watch(
@@ -40,6 +53,7 @@ watch(
     },
     { deep: true }
 );
+
 function selectRow() {
     const { selected } = session.layersManager;
     if (selected.length == 1) {
@@ -51,23 +65,61 @@ function selectRow() {
         }
     }
 }
+
 function onUpdate() {
+    if (editorIsFocused.value) return;
     const sourceCode = session.generateCode();
+    isProgrammaticUpdate = true;
     content.value = sourceCode.code ?? '';
     layersMap = sourceCode.map;
+    nextTick(() => nextTick(() => { isProgrammaticUpdate = false; }));
     nextTick(() => {
         selectRow();
     });
 }
+
 onMounted(() => {
     onUpdate();
 });
+
 let layersMap = {};
 
-function onChange() {
-    if (!aceRef.value?._editor) return;
+function hasBalancedParens(code: string): boolean {
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+    for (let i = 0; i < code.length; i++) {
+        const ch = code[i];
+        if (inString) {
+            if (ch === '\\') { i++; continue; }
+            if (ch === stringChar) { inString = false; }
+        } else if (ch === '"' || ch === "'") {
+            inString = true;
+            stringChar = ch;
+        } else if (ch === '(') {
+            depth++;
+        } else if (ch === ')') {
+            if (--depth < 0) return false;
+        }
+    }
+    return depth === 0;
+}
 
-    const { row, column } = aceRef.value._editor.getCursorPosition();
+function onAceChange() {
+    if (isProgrammaticUpdate) return;
+    if (editingTimer) clearTimeout(editingTimer);
+    editingTimer = setTimeout(async () => {
+        const code = content.value;
+        if (hasBalancedParens(code)) {
+            await session.importCode(code, false);
+        }
+        editingTimer = null;
+    }, 300);
+}
+
+function onCursorChange() {
+    if (!aceRef.value?._editor) return;
+    const { row } = aceRef.value._editor.getCursorPosition();
     const uid = Object.keys(layersMap).find((key) => layersMap[key].line === row);
     if (uid) {
         const layer = session.layersManager.getLayer(uid);
@@ -77,11 +129,12 @@ function onChange() {
     }
 }
 
-const debouncedChange = debounce(() => onChange(), 500);
+const debouncedCursorChange = debounce(() => onCursorChange(), 500);
 
 const rootRef = shallowRef<HTMLElement | null>(null);
 
 function onPaste(e: ClipboardEvent) {
+    if (!props.readonly) return;
     if (!rootRef.value?.contains(document.activeElement)) return;
     const text = e.clipboardData?.getData('text/plain');
     if (text) {
@@ -95,12 +148,14 @@ onMounted(() => {
 
 onUnmounted(() => {
     document.removeEventListener('paste', onPaste);
+    if (editingTimer) clearTimeout(editingTimer);
 });
 </script>
 <template>
     <div
         ref="rootRef"
         class="fui-code"
+        :class="{ readonly: props.readonly }"
         style="position: relative"
         @mouseenter.self="hovered = true"
         @mouseleave.self="hovered = false"
@@ -112,10 +167,10 @@ onUnmounted(() => {
             :theme="aceTheme"
             style="height: 100%; width: 100%; border-radius: 8px;"
             :options="aceOptions"
-            :readonly="true"
-            @click="onChange"
-            @keyup.up="debouncedChange"
-            @keyup.down="debouncedChange"
+            :readonly="props.readonly"
+            @click="onCursorChange"
+            @keyup.up="debouncedCursorChange"
+            @keyup.down="debouncedCursorChange"
         ></VAceEditor>
     </div>
 </template>
@@ -137,7 +192,7 @@ onUnmounted(() => {
     margin: 0;
 }
 
-.ace_cursor {
+.fui-code.readonly .ace_cursor {
     opacity: 0 !important;
 }
 
