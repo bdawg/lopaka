@@ -2,11 +2,12 @@
     lang="ts"
     setup
 >
-import { nextTick, onMounted, onUnmounted, ref, shallowRef, toRefs, watch } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, shallowRef, toRefs, watch, computed } from 'vue';
 import { VAceEditor } from 'vue3-ace-editor';
 import { useSession } from '../../core/session';
 import { debounce } from '../../utils';
 import { aceMode, aceTheme } from './ace/ace-config';
+import { useCodeEditable } from '/src/composables/useCodeEditable';
 const aceOptions = {
     fontSize: 12,
     showPrintMargin: false,
@@ -22,6 +23,8 @@ const props = defineProps<{
 }>();
 
 const session = useSession();
+const codeEditable = useCodeEditable();
+const isEditable = computed(() => !props.readonly && codeEditable.value);
 const { immidiateUpdates, selectionUpdates } = toRefs(session.state);
 const content = shallowRef('');
 const aceRef = shallowRef(null);
@@ -32,7 +35,7 @@ let isProgrammaticUpdate = false;
 
 onMounted(() => {
     watch(immidiateUpdates, onUpdate, { immediate: true });
-    if (!props.readonly) {
+    if (isEditable.value) {
         nextTick(() => {
             const editor = aceRef.value?._editor;
             if (!editor) return;
@@ -134,7 +137,7 @@ const debouncedCursorChange = debounce(() => onCursorChange(), 500);
 const rootRef = shallowRef<HTMLElement | null>(null);
 
 function onPaste(e: ClipboardEvent) {
-    if (!props.readonly) return;
+    if (isEditable.value) return;
     if (!rootRef.value?.contains(document.activeElement)) return;
     const text = e.clipboardData?.getData('text/plain');
     if (text) {
@@ -155,7 +158,7 @@ onUnmounted(() => {
     <div
         ref="rootRef"
         class="fui-code"
-        :class="{ readonly: props.readonly }"
+        :class="{ readonly: !isEditable }"
         style="position: relative"
         @mouseenter.self="hovered = true"
         @mouseleave.self="hovered = false"
@@ -167,7 +170,7 @@ onUnmounted(() => {
             :theme="aceTheme"
             style="height: 100%; width: 100%; border-radius: 8px;"
             :options="aceOptions"
-            :readonly="props.readonly"
+            :readonly="!isEditable"
             @click="onCursorChange"
             @keyup.up="debouncedCursorChange"
             @keyup.down="debouncedCursorChange"

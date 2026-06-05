@@ -3,6 +3,7 @@
     setup
 >
 import { computed, ref, toRefs, watch } from 'vue';
+import { useCodeEditable } from '/src/composables/useCodeEditable';
 import { useSession } from '../../core/session';
 import { buildLvglImageExport, logEvent, toCppVariableName } from '../../utils';
 import Icon from '/src/components/layout/Icon.vue';
@@ -17,6 +18,7 @@ const props = defineProps<{
 }>();
 
 const session = useSession();
+const codeEditable = useCodeEditable();
 
 const { platform, customFonts } = toRefs(session.state);
 const templates = computed(() => platform.value && session.platforms[platform.value].getTemplates());
@@ -201,6 +203,16 @@ const LABELS = {
                         @change="setSetting($event, key)"
                     />
                     <span class="label-text ml-2">{{ LABELS[key] ?? key }}</span>
+                </label>
+            </div>
+            <div class="form-control">
+                <label class="label label-xs cursor-pointer justify-start py-1">
+                    <input
+                        class="checkbox checkbox-xs checkbox-primary"
+                        type="checkbox"
+                        v-model="codeEditable"
+                    />
+                    <span class="label-text ml-2">Edit code</span>
                 </label>
             </div>
         </div>
