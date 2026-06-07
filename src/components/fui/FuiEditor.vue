@@ -412,7 +412,7 @@ function onMouseClick() {
 .fui-editor__bottom-right {
     min-width: 230px;
     height: 0;
-    min-height: 100%;
+    min-height: max(200px, 100%);
     overflow-y: auto;
 }
 
